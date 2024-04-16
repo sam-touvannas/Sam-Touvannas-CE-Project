@@ -1,0 +1,152 @@
+---
+title: "STAT Learning Project"
+output: html_document
+date: "2023-12-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(1111)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(tidyverse)
+library(neuralnet)
+library(foreign)
+library(nnet)
+library(ggplot2)
+library(reshape2)
+library(fastDummies)
+setwd("C:/Users/samto/OneDrive/Desktop/Stat Learning")
+data = read.csv("children anemia.csv")
+data = data[1:5000,1:10]
+colnames(data) = c("mother_age", "mother_residence","mother_educ", "mother_wealth", "mother_5_year_births", "child_age", "hemoglobin", "anemia", "mosquito_bed_net", "smokes")
+data = data[!(data$anemia == ""),]
+
+data$mother_age = as.numeric(substr(data$mother_age, 1, 2))
+data
+sample = sample(c(TRUE, FALSE), nrow(data), replace=TRUE, prob=c(0.5,0.5))
+summary(sample)
+train = data[sample, ]
+test = data[!sample, ]
+train
+test
+```
+
+Diagnostics
+```{r}
+data$anemia = factor(data$anemia, order = TRUE, levels = c("Not anemic", "Mild", "Moderate", "Severe"))
+data$mother_educ = factor(data$mother_educ, order = TRUE, levels = c("No education", "Primary", "Secondary", "Higher"))
+data$mother_wealth = factor(data$mother_wealth, order = TRUE, levels = c("Poorest", "Poorer", "Middle", "Richer", "Richest"))
+summary(data)
+data
+boxplot(data$mother_5_year_births~data$anemia, col="skyblue", main="Anemia Level by Mother's Births in 5 years", xlab="Anemia Level", ylab="Mother's Births in 5 Years")
+
+boxplot(data$mother_age~data$anemia, col="skyblue", main="Anemia Level by Mother's Birth Age", xlab="Anemia Level", ylab="Mother Birth Age")
+
+boxplot(data$hemoglobin~data$anemia, col="skyblue", main="Anemia Level by Hemoglobin Level", xlab="Anemia Level", ylab="Hemoglobin Level")
+
+boxplot(data$child_age~data$anemia, col="skyblue", main="Anemia Level by Child's Age", xlab="Anemia Level", ylab="Child's Age")
+
+edtable = table(data$mother_educ, data$anemia)
+barplot(edtable, legend.text = TRUE, main = "Anemia Level by Mother's Education", xlab = "Anemia Level", ylab = "Frequency" )
+
+wealthtable = table(data$mother_wealth, data$anemia)
+barplot(wealthtable, legend.text = TRUE, main = "Anemia Level by Mother's Wealth", xlab = "Anemia Level", ylab = "Frequency" )
+
+mosqtable = table(data$mosquito_bed_net, data$anemia)
+barplot(mosqtable, legend.text = TRUE, main = "Anemia Level by Mosquito Bed Net", xlab = "Anemia Level", ylab = "Frequency" )
+
+smoketable = table(data$smokes, data$anemia)
+barplot(smoketable, legend.text = TRUE, main = "Anemia Level by Mother's Smoking Status", xlab = "Anemia Level", ylab = "Frequency" )
+```
+
+Multinomial Regression
+```{r}
+
+fit1 = multinom(anemia ~ ., data = train)
+summary(fit1)
+exp(coef(fit1))
+test$anemiapred = predict(fit1, newdata = test, "class")
+ex = table(test$anemia, test$anemiapred)
+ex
+(234 + 217 + 371 + 8) / 958
+```
+
+Neural Networks
+```{r}
+train1 = subset(train, select = -c(anemia))
+train1 = dummy_cols(train1)
+train1 = subset(train1, select = -c(mother_residence, mother_educ, mother_wealth, mosquito_bed_net, smokes))
+train1$anemia = train$anemia
+
+test1 = subset(test, select = -c(anemia))
+test1 = dummy_cols(test1)
+test1 = subset(test1, select = -c(mother_residence, mother_educ, mother_wealth, mosquito_bed_net, smokes))
+test1$anemia = test$anemia
+train1
+nnmodel = neuralnet(anemia ~ mother_age + mother_5_year_births + child_age + hemoglobin + mother_residence_Urban + mother_educ_Higher + mother_educ_Primary + mother_educ_Secondary + mother_wealth_Middle + mother_wealth_Poorer + mother_wealth_Richer + mother_wealth_Richest +  mosquito_bed_net_Yes + smokes_Yes, hidden = 4, data=train1,linear.output = FALSE, stepmax = 1e7)
+
+plot(nnmodel, rep = "best")
+
+
+pred <- predict(nnmodel, test1)
+labels <- c("Mild", "Moderate", "Not Anemic", "Severe")
+Confusion_Matrix = data.frame(max.col(pred)) %>%     
+mutate(pred=labels[max.col.pred.]) %>%
+select(2) %>%
+unlist()
+Confusion_Matrix
+table(test1$anemia, Confusion_Matrix)
+test1$anemia
+
+accuracy = (247+253+371 + 8)/958
+accuracy
+
+nnmodel2 = neuralnet(anemia ~ mother_age + mother_5_year_births + child_age + hemoglobin + mother_residence_Urban + mother_educ_Higher + mother_educ_Primary + mother_educ_Secondary + mother_wealth_Middle + mother_wealth_Poorer + mother_wealth_Richer + mother_wealth_Richest +  mosquito_bed_net_Yes + smokes_Yes, hidden = c(4,2), data=train1,linear.output = FALSE, stepmax = 1e7)
+
+plot(nnmodel2, rep = "best")
+
+
+pred <- predict(nnmodel2, test1)
+labels <- c("Mild", "Moderate", "Not Anemic", "Severe")
+prediction_label <- data.frame(max.col(pred)) %>%     
+mutate(pred=labels[max.col.pred.]) %>%
+select(2) %>%
+unlist()
+prediction_label
+table(test1$anemia, prediction_label)
+test1$anemia
+
+accuracy = (238+243+371+2)/958
+accuracy
+```
+Decision Tree Model
+```{r}
+train1$anemia = as.factor(train1$anemia)
+test1$anemia = as.factor(test1$anemia)
+# Create a decision tree model specification
+tree = rpart(formula = anemia ~ mother_age + mother_5_year_births + child_age + hemoglobin + mother_residence_Urban + mother_educ_Higher + mother_educ_Primary + mother_educ_Secondary + mother_wealth_Middle + mother_wealth_Poorer + mother_wealth_Richer + mother_wealth_Richest +  mosquito_bed_net_Yes + smokes_Yes, data = train1)
+y_pred = predict(tree, test1, type = 'class')
+cm = table(test1$anemia, y_pred)
+cm
+rpart.plot(tree)
+(246 + 271 + 375)/(246+22+34+271+10+375)
+```
+Random Forest Model
+
+```{r}
+train1$anemia = as.factor(train1$anemia)
+test1$anemia = as.factor(test1$anemia)
+rffit = randomForest(formula = anemia ~ mother_age + mother_5_year_births + child_age + hemoglobin + mother_residence_Urban + mother_educ_Higher + mother_educ_Primary + mother_educ_Secondary + mother_wealth_Middle + mother_wealth_Poorer + mother_wealth_Richer + mother_wealth_Richest +  mosquito_bed_net_Yes + smokes_Yes, data = train1, importance = TRUE) 
+rffit
+y_pred = predict(rffit, test1)
+cm = table(test1$anemia, y_pred)
+cm
+(256+265+378+3)/(256+6+19+22+265+7+2+378+3)
+
+varImpPlot(rffit, main = "Feature Importance", type =1 )
+```
